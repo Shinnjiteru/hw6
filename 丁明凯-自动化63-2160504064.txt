@@ -1,0 +1,185 @@
+all functions are separated at the bottom of each assignment
+Assignment_1&2 include add_noise,filter_select(such as suanshu/jihe/xiebo/zishiying etc.),deal(process figure)
+functions in Assignment_3 are explained after '%'
+----------------------------------------------------------------------------------------------------
+Assignment_1 and Assignment_2 with functions behind
+----------------------------------------------------------------------------------------------------
+clear;clc;
+image = double(imread('lena.bmp'));
+gauss = add_noise(image,'gauss',0,10);
+jiaoyan = add_noise(image,'jiaoyan',0.1,0.1);
+deal(gauss);
+saveas(gcf,'result_1/gauss1.bmp');
+deal(jiaoyan);
+saveas(gcf,'result_1/jiaoyan1.bmp');
+figure(10);
+fanxiebo = filter_select(jiaoyan,'fanxiebo',5);
+saveas(gcf,'result_1/Q1.bmp')
+
+
+function  output = add_noise(figure,modelname,range,sigma)
+figure = double(figure);
+[Row,Col] = size(figure);
+switch modelname
+    case 'gauss'
+        gauss = double(range+sigma.*randn(Row,Col));
+        output = uint8(figure+gauss);
+    case 'jiaoyan'
+        x = rand(Row,Col);  
+        figure(x<=range) = 0;
+        figure(x > 1-sigma) = 256; 
+        output = uint8(figure);
+end
+end
+
+function output = filter_select(figure,mode,modelsize)
+figure = double(figure);
+[Row,Col] = size(figure);
+n = (modelsize-1)/2;
+switch mode
+    case 'suanshu'
+        for i = 1+n:1:Row-n
+            for j = 1+n:Col-n
+                figure(i,j) = sum(figure(i-n:i+n,j-n:j+n),'all')/modelsize/modelsize;
+            end
+        end
+    case 'jihe'
+        figure = exp(imfilter(log(figure),fspecial('average',3)));
+    case 'xiebo'
+        figure=1./imfilter(1./(figure+0.1),fspecial('average',[modelsize,modelsize]),'replicate')-0.1;
+    case 'fanxiebo'
+%         subplot(1,3,1);
+%         imshow(figure);
+%         title('椒盐噪声污染的lena');
+        ImF=ones(modelsize,modelsize);
+        Q=[-0.5,0.5];
+        for m=1:2
+            for i=n+1:Row-n
+                for j=n+1:Col-n
+                    temp=figure(i-n:i+n,j-n:j+n).*ImF(1:modelsize,1:modelsize);
+                    ms=sum(sum(temp.^Q(m)));
+                    ms2=sum(sum(temp.^(Q(m)+1)));
+                    output(i,j)=ms2/ms;
+                end
+            end
+            output=uint8(output);
+            subplot(1,2,m);
+            imshow(output)
+            str1='反谐波滤波器Q=';
+            str2=num2str(Q(m));
+            string=[str1,str2];
+            title(string);    
+        end
+end
+output = uint8(figure);
+end
+
+function []=deal(img)
+suanshu = filter_select(img,'suanshu',7);
+jihe = filter_select(img,'jihe',7);
+xiebo = filter_select(img,'xiebo',7);
+figure;
+subplot(2,3,1);imshow(img);title('origin noise');
+subplot(2,3,2);imshow(suanshu);title('suanshu');
+subplot(2,3,3);imshow(jihe);title('jihe');
+subplot(2,3,4);imshow(xiebo);title('xiebo');
+end
+----------------------------------------------------------------------------------------------------
+Assignment_3 with functions behind
+----------------------------------------------------------------------------------------------------
+lena=(imread('lena.bmp'));
+img=im2double(lena);
+[Row,Col]=size(img);
+figure;
+subplot(2,3,1);imshow(img);title('原图像');
+
+[mohu_ed,H,freq]=mohu(img,Row,Col);
+subplot(2,3,2)
+imshow(mohu_ed);
+title('运动模糊后的图像');
+
+mean=0;%均值
+var=10/(Row*Col);%方差
+
+%加入高斯噪声
+[img_noise,img_noise_freq]=gauss_noise(freq,Row,Col,mean,var);
+subplot(2,3,3)
+imshow(img_noise);
+title('加入高斯噪声后的图像');
+
+%维纳滤波
+K=0.002;
+weina_processed=weina(img,img_noise_freq,H,K);
+subplot(2,3,4);imshow(weina_processed);title('维纳滤波');
+
+%约束最小二乘滤波
+yueshu_processed=yueshu(img_noise_freq,H,mean,var);
+subplot(2,3,5);imshow(yueshu_processed);title('约束最小二乘滤波');
+
+saveas(gcf,'result_2/lena_fliter.bmp');
+
+%模糊处理
+function [output,H,G]=mohu(img,Row,Col)
+F=fft2(img,2*Row,2*Col);
+H=zeros(2*Row,2*Col);
+T=1;
+alpha=0.1;
+beta=0.1;
+for i=1:2*Row
+    for j=1:2*Col
+        if ((i-Row)*alpha+(j-Col)*beta)~=0
+            H(i,j)=T/(pi*((i-Row)*alpha+(j-Col)*beta))*sin(pi*((i-Row)*alpha+(j-Col)*beta))*exp(-1i*pi*((i-Row)*alpha+(j-Col)*beta));
+        else
+            H(i,j)=T*exp(-1i*pi*((i-Row)*alpha+(j-Col)*beta));
+        end
+    end
+end
+H=ifftshift(H);
+G=H.*F;
+dealed=ifft2(G);
+output=real(dealed(1:Row,1:Col));
+end
+
+function [output,bef_ifft]=gauss_noise(img,Row,Col,mean,var)%返回空域和频域图像数据
+basic=mean+sqrt(var)*randn(2*Row,2*Col);
+bef_ifft=img+fft2(basic);
+Ifft=ifft2(bef_ifft);
+output=real(Ifft(1:Row,1:Col));
+end
+
+%维纳滤波器
+function  output=weina(img,G_freq,H,K)%返回滤波后图像空域数据
+[Row,Col]=size(img);
+F_freq=(conj(H)./(H.*conj(H)+K)).*G_freq;
+output=real(ifft2(F_freq));
+output=output(1:Row,1:Col);
+%para=sum(output(:).^2)/sum((img(:)-output(:)).^2);
+end
+
+%约束最小二乘滤波器
+function output=yueshu(img,H,mean,var)
+[Row,Col]=size(img);
+cal=(Row/2)*(Col/2)*(mean^2+var);
+T=fft2([0,-1,0;-1,4,-1;0,-1,0],Row,Col);
+alpha=0.2;
+delta=0.01;
+step=0.001;
+while 1
+    F=conj(H)./(conj(H).*H+alpha*conj(T).*T).*img;
+    FF=img-H.*F;
+    f=real(ifft2(FF));
+    f=f(1:(Row/2),1:(Col/2));
+    square=sum(f(:).^2);
+    if abs(square-cal)<=delta
+        break;
+    elseif square<cal-delta
+        alpha=alpha+step;
+    else
+        alpha=alpha-step;
+    end
+end
+output=real(ifft2(F));
+output=output(1:(Row/2),1:(Col/2));
+end
+----------------------------------------------------------------------------------------------------
+thanks for Liu's filter functions.
